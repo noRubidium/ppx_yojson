@@ -7,3 +7,5 @@ val remove : idx: int -> 'a list -> 'a list
 
 (** Return all the permutations of the given list *)
 val permutations : 'a list -> 'a list list
+
+val permutations_with_padding : length : int -> padding : 'a -> 'a list -> 'a list list

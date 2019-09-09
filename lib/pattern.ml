@@ -40,7 +40,8 @@ let rec expand ~loc ~path pat =
     Ast_builder.Default.ppat_alias ~loc pat var
   | [%pat? []] -> [%pat? `List []]
   | [%pat? [%p? _]::[%p? _]] -> [%pat? `List [%p expand_list ~loc ~path pat]]
-  | {ppat_desc = Ppat_record (l, Closed); ppat_loc; _} -> expand_record ~loc ~ppat_loc ~path l
+  | {ppat_desc = Ppat_record (l, Closed); ppat_loc; _} -> expand_record ~loc ~ppat_loc ~path l ~type_:`Closed
+  | {ppat_desc = Ppat_record (l, Open); ppat_loc; _} -> expand_record ~loc ~ppat_loc ~path l ~type_:`Open
   | {ppat_loc = loc; _} -> Raise.unsupported_payload ~loc
 and expand_list ~loc ~path = function
   | [%pat? []] -> [%pat? []]
@@ -50,7 +51,7 @@ and expand_list ~loc ~path = function
     let json_tl = expand_list ~loc ~path tl in
     [%pat? [%p json_hd]::[%p json_tl]]
   | _ -> assert false
-and expand_record ~loc ~ppat_loc ~path l =
+and expand_record ~loc ~ppat_loc ~path ~type_ l =
   let field = function
     | {txt = Lident s; _} -> [%pat? [%p Ast_builder.Default.pstring ~loc s]]
     | {txt = _; loc} -> Raise.unsupported_record_field ~loc
@@ -58,15 +59,32 @@ and expand_record ~loc ~ppat_loc ~path l =
   let expand_one (f, p) =
     [%pat? ([%p field f], [%p expand ~loc ~path p])]
   in
-  let assoc_pattern pat_list = [%pat? `Assoc [%p Ast_builder.Default.plist ~loc pat_list]] in
+  let rec plist' ~loc l =
+    let open Ast_builder.Default in
+      match l with
+      | [] ->
+        [%pat? _]
+      | x :: l ->
+        ppat_construct ~loc (Located.mk ~loc (Longident.Lident "::"))
+          (Some (ppat_tuple ~loc [x; plist' ~loc l]))
+    in
+  let assoc_pattern pat_list =
+    match type_ with
+    |`Open    -> [%pat? `Assoc [%p plist' ~loc pat_list]]
+    | `Closed -> [%pat? `Assoc [%p Ast_builder.Default.plist ~loc pat_list]]
+  in
   if List.length l > 4 then
     Raise.too_many_fields_in_record_pattern ~loc:ppat_loc
   else
     let pat_list = List.map expand_one l in
     let permutations = Utils.permutations pat_list in
+    let permutations =
+      match type_ with
+      | `Closed -> permutations
+      | `Open -> List.map (Utils.permutations_with_padding ~length:5 ~padding:[%pat? _]) permutations |> List.concat
+    in
     let assoc_patterns = List.map assoc_pattern permutations in
     match assoc_patterns with
     | [] -> assert false
     | [single] -> single
     | hd::tl -> List.fold_left (fun acc elm -> [%pat? [%p acc] | [%p elm]]) hd tl
-    

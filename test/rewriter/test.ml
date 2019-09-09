@@ -52,4 +52,6 @@ let patterns = function [@warning "-11"]
   | [%yojson? 1l] as _int_32 -> ()
   | [%yojson? 1n] as _native_int -> ()
   | [%yojson? _s] as _var -> ()
+  | [%yojson? { a = _a; b = 1; _ }] -> ()
+  | [%yojson? { a = _a; _ }] as _var -> ()
   | [%yojson? _] as _any -> ()
